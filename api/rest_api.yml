@@ -1,0 +1,696 @@
+openapi: 3.0.3
+info:
+  title: Социальная сеть для путешественников — REST API
+  description: >
+    REST API социальной сети для путешественников: публикация постов с фотографиями
+    и геопривязкой, лента по подпискам, профили, лайки, комментарии, подписки и
+    популярные места для путешествий.
+  version: 1.0.0
+  contact:
+    name: System Design course
+    url: https://balun.courses/courses/system_design
+
+servers:
+  - url: https://api.travelnet.example/v1
+    description: Production
+  - url: https://stage.api.travelnet.example/v1
+    description: Staging
+
+tags:
+  - name: media
+    description: Загрузка и обработка медиафайлов (сжатие, превью)
+  - name: posts
+    description: Создание и получение постов
+  - name: feed
+    description: Лента пользователя на основе подписок
+  - name: profiles
+    description: Профили пользователей и их посты
+  - name: subscriptions
+    description: Подписки/отписки и социальный граф
+  - name: likes
+    description: Установка и снятие лайков
+  - name: comments
+    description: Комментарии к постам
+  - name: places
+    description: Популярные места и посты с мест
+
+security:
+  - bearerAuth: []
+
+paths:
+  /media:
+    post:
+      tags: [media]
+      summary: Загрузить фотографию
+      description: >
+        Загружает одну фотографию. На сервере фото сжимается (вес результата не более 2 МБ),
+        генерируется превью и сохраняется в медиа-хранилище. Возвращает идентификатор медиа,
+        который затем используется при создании поста.
+      operationId: uploadMedia
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Исходный файл изображения (до сжатия)
+      responses:
+        '201':
+          description: Медиа загружено и обработано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Media'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Файл слишком большой
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: Неподдерживаемый формат файла
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /posts:
+    post:
+      tags: [posts]
+      summary: Опубликовать пост
+      description: Создаёт пост с описанием, геопривязкой и ранее загруженными фотографиями (до 5 штук).
+      operationId: createPost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostCreateRequest'
+      responses:
+        '201':
+          description: Пост создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /posts/{postId}:
+    parameters:
+      - $ref: '#/components/parameters/PostId'
+    get:
+      tags: [posts]
+      summary: Получить пост
+      operationId: getPost
+      responses:
+        '200':
+          description: Пост
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [posts]
+      summary: Удалить пост
+      operationId: deletePost
+      responses:
+        '204':
+          description: Пост удалён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /feed:
+    get:
+      tags: [feed]
+      summary: Лента пользователя
+      description: >
+        Лента на основе подписок в обратном хронологическом порядке. Пагинация курсорная:
+        по умолчанию возвращается 10 постов.
+      operationId: getFeed
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница ленты
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [profiles]
+      summary: Профиль пользователя
+      operationId: getUserProfile
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/{userId}/posts:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [profiles]
+      summary: Посты пользователя
+      description: Посты пользователя в обратном хронологическом порядке. По умолчанию 10 постов.
+      operationId: getUserPosts
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница постов пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/{userId}/subscription:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    put:
+      tags: [subscriptions]
+      summary: Подписаться на пользователя
+      operationId: subscribe
+      responses:
+        '204':
+          description: Подписка оформлена (идемпотентно)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Нельзя подписаться на самого себя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [subscriptions]
+      summary: Отписаться от пользователя
+      operationId: unsubscribe
+      responses:
+        '204':
+          description: Подписка снята (идемпотентно)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/{userId}/followers:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [subscriptions]
+      summary: Подписчики пользователя
+      operationId: getFollowers
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница подписчиков
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+
+  /users/{userId}/subscriptions:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [subscriptions]
+      summary: Подписки пользователя
+      operationId: getSubscriptions
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница подписок
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+
+  /posts/{postId}/like:
+    parameters:
+      - $ref: '#/components/parameters/PostId'
+    put:
+      tags: [likes]
+      summary: Поставить лайк
+      description: Идемпотентная установка лайка текущим пользователем.
+      operationId: setLike
+      responses:
+        '204':
+          description: Лайк установлен
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [likes]
+      summary: Снять лайк
+      operationId: removeLike
+      responses:
+        '204':
+          description: Лайк снят
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /posts/{postId}/comments:
+    parameters:
+      - $ref: '#/components/parameters/PostId'
+    get:
+      tags: [comments]
+      summary: Комментарии к посту
+      description: Комментарии в обратном хронологическом порядке. По умолчанию 10 штук.
+      operationId: getComments
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница комментариев
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentPage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [comments]
+      summary: Добавить комментарий
+      operationId: addComment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreateRequest'
+      responses:
+        '201':
+          description: Комментарий создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /places/popular:
+    get:
+      tags: [places]
+      summary: Популярные места для путешествий
+      description: Список популярных мест, отсортированный по популярности (числу постов/активности).
+      operationId: getPopularPlaces
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница популярных мест
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacePage'
+
+  /places/{placeId}/posts:
+    parameters:
+      - $ref: '#/components/parameters/PlaceId'
+    get:
+      tags: [places]
+      summary: Посты с конкретного места
+      operationId: getPlacePosts
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница постов с места
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostPage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    PostId:
+      name: postId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PlaceId:
+      name: placeId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Курсор для постраничной выборки (из nextCursor предыдущего ответа).
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Количество элементов на странице.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 10
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Не аутентифицирован
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Недостаточно прав
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    GeoLocation:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        placeId:
+          type: string
+          format: uuid
+          description: Идентификатор привязанного места (если определено)
+        placeName:
+          type: string
+          description: Человекочитаемое название места
+
+    Media:
+      type: object
+      required: [id, url, previewUrl]
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+          description: URL сжатого изображения (вес не более 2 МБ)
+        previewUrl:
+          type: string
+          format: uri
+          description: URL превью
+        width:
+          type: integer
+        height:
+          type: integer
+        sizeBytes:
+          type: integer
+          format: int64
+
+    PostCreateRequest:
+      type: object
+      required: [mediaIds]
+      properties:
+        description:
+          type: string
+          maxLength: 500
+          description: Описание поста, до 500 символов
+        mediaIds:
+          type: array
+          description: Идентификаторы заранее загруженных фото (до 5 штук)
+          minItems: 1
+          maxItems: 5
+          items:
+            type: string
+            format: uuid
+        location:
+          $ref: '#/components/schemas/GeoLocation'
+
+    Post:
+      type: object
+      required: [id, authorId, authorName, media, likesCount, commentsCount, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        authorName:
+          type: string
+        description:
+          type: string
+          maxLength: 500
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
+        location:
+          $ref: '#/components/schemas/GeoLocation'
+        likesCount:
+          type: integer
+          format: int64
+        commentsCount:
+          type: integer
+          format: int64
+        likedByMe:
+          type: boolean
+          description: Поставил ли лайк текущий пользователь
+        createdAt:
+          type: string
+          format: date-time
+
+    CommentCreateRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Текст комментария, до 300 символов
+
+    Comment:
+      type: object
+      required: [id, postId, authorId, authorName, text, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        postId:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          format: uuid
+        authorName:
+          type: string
+        text:
+          type: string
+          maxLength: 300
+        createdAt:
+          type: string
+          format: date-time
+
+    UserProfile:
+      type: object
+      required: [id, name, followersCount, subscriptionsCount, postsCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        bio:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+        followersCount:
+          type: integer
+          format: int64
+        subscriptionsCount:
+          type: integer
+          format: int64
+        postsCount:
+          type: integer
+          format: int64
+        subscribedByMe:
+          type: boolean
+          description: Подписан ли текущий пользователь на этот профиль
+
+    UserShort:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+
+    Place:
+      type: object
+      required: [id, name, postsCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        location:
+          $ref: '#/components/schemas/GeoLocation'
+        postsCount:
+          type: integer
+          format: int64
+          description: Количество постов с этого места
+
+    PostPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Post'
+        nextCursor:
+          type: string
+          nullable: true
+          description: Курсор следующей страницы; null/отсутствует, если данных больше нет
+
+    CommentPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+        nextCursor:
+          type: string
+          nullable: true
+
+    UserPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserShort'
+        nextCursor:
+          type: string
+          nullable: true
+
+    PlacePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Place'
+        nextCursor:
+          type: string
+          nullable: true
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Машиночитаемый код ошибки
+        message:
+          type: string
+          description: Человекочитаемое описание ошибки
+        details:
+          type: object
+          additionalProperties: true
