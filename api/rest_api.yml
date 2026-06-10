@@ -2,9 +2,7 @@ openapi: 3.0.3
 info:
   title: Социальная сеть для путешественников — REST API
   description: >
-    REST API социальной сети для путешественников: публикация постов с фотографиями
-    и геопривязкой, лента по подпискам, профили, лайки, комментарии, подписки и
-    популярные места для путешествий.
+    Домашнее задание в рамках курса System Design от Владимира Балуна: REST API социальной сети для путешественников.
   version: 1.0.0
   contact:
     name: System Design course
@@ -13,13 +11,11 @@ info:
 servers:
   - url: https://api.travelnet.example/v1
     description: Production
-  - url: https://stage.api.travelnet.example/v1
-    description: Staging
 
 tags:
   - name: media
-    description: Загрузка и обработка медиафайлов (сжатие, превью)
-  - name: posts
+    description: Загрузка и обработка медиафайлов
+  - name: publications
     description: Создание и получение постов
   - name: feed
     description: Лента пользователя на основе подписок
@@ -83,50 +79,102 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /posts:
+  /media/{mediaId}:
+    parameters:
+      - $ref: '#/components/parameters/MediaId'
+    delete:
+      tags: [media]
+      summary: Удалить медиа
+      description: >
+        Удаляет загруженное медиа (изображение и его превью) из хранилища.
+        Доступно только владельцу. Удаление недоступно, если медиа уже прикреплено к посту.
+      operationId: deleteMedia
+      responses:
+        '204':
+          description: Медиа удалено
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Медиа используется в посте и не может быть удалено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /publications:
     post:
-      tags: [posts]
+      tags: [publications]
       summary: Опубликовать пост
       description: Создаёт пост с описанием, геопривязкой и ранее загруженными фотографиями (до 5 штук).
-      operationId: createPost
+      operationId: createPublication
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PostCreateRequest'
+              $ref: '#/components/schemas/PublicationCreateRequest'
       responses:
         '201':
           description: Пост создан
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Post'
+                $ref: '#/components/schemas/Publication'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /posts/{postId}:
+  /publications/{publicationId}:
     parameters:
-      - $ref: '#/components/parameters/PostId'
+      - $ref: '#/components/parameters/PublicationId'
     get:
-      tags: [posts]
+      tags: [publications]
       summary: Получить пост
-      operationId: getPost
+      operationId: getPublication
       responses:
         '200':
           description: Пост
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Post'
+                $ref: '#/components/schemas/Publication'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [publications]
+      summary: Редактировать пост
+      description: Изменяет описание и/или геопривязку поста. Доступно только автору.
+      operationId: updatePublication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicationUpdateRequest'
+      responses:
+        '200':
+          description: Пост обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Publication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
-      tags: [posts]
+      tags: [publications]
       summary: Удалить пост
-      operationId: deletePost
+      operationId: deletePublication
       responses:
         '204':
           description: Пост удалён
@@ -154,7 +202,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PostPage'
+                $ref: '#/components/schemas/PublicationPage'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -175,14 +223,14 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /users/{userId}/posts:
+  /users/{userId}/publications:
     parameters:
       - $ref: '#/components/parameters/UserId'
     get:
       tags: [profiles]
       summary: Посты пользователя
       description: Посты пользователя в обратном хронологическом порядке. По умолчанию 10 постов.
-      operationId: getUserPosts
+      operationId: getUserPublications
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -192,16 +240,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PostPage'
+                $ref: '#/components/schemas/PublicationPage'
         '404':
           $ref: '#/components/responses/NotFound'
 
   /users/{userId}/subscription:
     parameters:
       - $ref: '#/components/parameters/UserId'
-    put:
+    post:
       tags: [subscriptions]
       summary: Подписаться на пользователя
+      description: "Идемпотентная подписка текущего пользователя: повторный вызов не меняет состояние."
       operationId: subscribe
       responses:
         '204':
@@ -264,10 +313,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserPage'
 
-  /posts/{postId}/like:
+  /publications/{publicationId}/like:
     parameters:
-      - $ref: '#/components/parameters/PostId'
-    put:
+      - $ref: '#/components/parameters/PublicationId'
+    post:
       tags: [likes]
       summary: Поставить лайк
       description: Идемпотентная установка лайка текущим пользователем.
@@ -291,9 +340,9 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /posts/{postId}/comments:
+  /publications/{publicationId}/comments:
     parameters:
-      - $ref: '#/components/parameters/PostId'
+      - $ref: '#/components/parameters/PublicationId'
     get:
       tags: [comments]
       summary: Комментарии к посту
@@ -352,13 +401,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/PlacePage'
 
-  /places/{placeId}/posts:
+  /places/{placeId}/publications:
     parameters:
       - $ref: '#/components/parameters/PlaceId'
     get:
       tags: [places]
       summary: Посты с конкретного места
-      operationId: getPlacePosts
+      operationId: getPlacePublications
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -368,7 +417,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PostPage'
+                $ref: '#/components/schemas/PublicationPage'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -380,8 +429,8 @@ components:
       bearerFormat: JWT
 
   parameters:
-    PostId:
-      name: postId
+    PublicationId:
+      name: publicationId
       in: path
       required: true
       schema:
@@ -396,6 +445,13 @@ components:
         format: uuid
     PlaceId:
       name: placeId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MediaId:
+      name: mediaId
       in: path
       required: true
       schema:
@@ -491,7 +547,7 @@ components:
           type: integer
           format: int64
 
-    PostCreateRequest:
+    PublicationCreateRequest:
       type: object
       required: [mediaIds]
       properties:
@@ -510,7 +566,7 @@ components:
         location:
           $ref: '#/components/schemas/GeoLocation'
 
-    Post:
+    Publication:
       type: object
       required: [id, authorId, authorName, media, likesCount, commentsCount, createdAt]
       properties:
@@ -543,6 +599,22 @@ components:
         createdAt:
           type: string
           format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          description: Время последнего редактирования поста
+
+    PublicationUpdateRequest:
+      type: object
+      minProperties: 1
+      description: Поля для частичного обновления поста. Передаются только изменяемые поля.
+      properties:
+        description:
+          type: string
+          maxLength: 500
+          description: Описание поста, до 500 символов
+        location:
+          $ref: '#/components/schemas/GeoLocation'
 
     CommentCreateRequest:
       type: object
@@ -556,12 +628,12 @@ components:
 
     Comment:
       type: object
-      required: [id, postId, authorId, authorName, text, createdAt]
+      required: [id, publicationId, authorId, authorName, text, createdAt]
       properties:
         id:
           type: string
           format: uuid
-        postId:
+        publicationId:
           type: string
           format: uuid
         authorId:
@@ -578,7 +650,7 @@ components:
 
     UserProfile:
       type: object
-      required: [id, name, followersCount, subscriptionsCount, postsCount]
+      required: [id, name, followersCount, subscriptionsCount, publicationsCount]
       properties:
         id:
           type: string
@@ -596,7 +668,7 @@ components:
         subscriptionsCount:
           type: integer
           format: int64
-        postsCount:
+        publicationsCount:
           type: integer
           format: int64
         subscribedByMe:
@@ -618,7 +690,7 @@ components:
 
     Place:
       type: object
-      required: [id, name, postsCount]
+      required: [id, name, publicationsCount]
       properties:
         id:
           type: string
@@ -627,19 +699,19 @@ components:
           type: string
         location:
           $ref: '#/components/schemas/GeoLocation'
-        postsCount:
+        publicationsCount:
           type: integer
           format: int64
           description: Количество постов с этого места
 
-    PostPage:
+    PublicationPage:
       type: object
       required: [items]
       properties:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Post'
+            $ref: '#/components/schemas/Publication'
         nextCursor:
           type: string
           nullable: true
@@ -693,4 +765,3 @@ components:
           description: Человекочитаемое описание ошибки
         details:
           type: object
-          additionalProperties: true
