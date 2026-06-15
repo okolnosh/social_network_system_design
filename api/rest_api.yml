@@ -78,6 +78,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /media/{mediaId}:
     parameters:
@@ -104,8 +106,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /publications:
+    get:
+      tags: [publications]
+      summary: Список постов
+      description: >
+        Посты в обратном хронологическом порядке. Можно отфильтровать по автору (userId)
+        и/или по месту (placeId). Без фильтров возвращаются посты текущего пользователя.
+        По умолчанию 10 постов.
+      operationId: getPublications
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          description: Фильтр по автору поста.
+          schema:
+            type: string
+            format: uuid
+        - name: placeId
+          in: query
+          required: false
+          description: Фильтр по месту, к которому привязан пост.
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница постов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicationPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     post:
       tags: [publications]
       summary: Опубликовать пост
@@ -128,6 +172,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /publications/{publicationId}:
     parameters:
@@ -145,6 +191,8 @@ paths:
                 $ref: '#/components/schemas/Publication'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     patch:
       tags: [publications]
       summary: Редактировать пост
@@ -171,6 +219,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     delete:
       tags: [publications]
       summary: Удалить пост
@@ -184,6 +234,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /feed:
     get:
@@ -205,6 +257,8 @@ paths:
                 $ref: '#/components/schemas/PublicationPage'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /users/{userId}:
     parameters:
@@ -222,60 +276,8 @@ paths:
                 $ref: '#/components/schemas/UserProfile'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /users/{userId}/publications:
-    parameters:
-      - $ref: '#/components/parameters/UserId'
-    get:
-      tags: [profiles]
-      summary: Посты пользователя
-      description: Посты пользователя в обратном хронологическом порядке. По умолчанию 10 постов.
-      operationId: getUserPublications
-      parameters:
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200':
-          description: Страница постов пользователя
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublicationPage'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /users/{userId}/subscription:
-    parameters:
-      - $ref: '#/components/parameters/UserId'
-    post:
-      tags: [subscriptions]
-      summary: Подписаться на пользователя
-      description: "Идемпотентная подписка текущего пользователя: повторный вызов не меняет состояние."
-      operationId: subscribe
-      responses:
-        '204':
-          description: Подписка оформлена (идемпотентно)
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Нельзя подписаться на самого себя
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-    delete:
-      tags: [subscriptions]
-      summary: Отписаться от пользователя
-      operationId: unsubscribe
-      responses:
-        '204':
-          description: Подписка снята (идемпотентно)
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /users/{userId}/followers:
     parameters:
@@ -294,6 +296,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserPage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [subscriptions]
+      summary: Подписаться на пользователя
+      description: >
+        Идемпотентная подписка текущего пользователя: добавляет его в подписчики пользователя.
+        Повторный вызов не меняет состояние.
+      operationId: subscribe
+      responses:
+        '204':
+          description: Подписка оформлена (идемпотентно)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Нельзя подписаться на самого себя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags: [subscriptions]
+      summary: Отписаться от пользователя
+      description: "Идемпотентная отписка текущего пользователя: убирает его из подписчиков пользователя."
+      operationId: unsubscribe
+      responses:
+        '204':
+          description: Подписка снята (идемпотентно)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /users/{userId}/subscriptions:
     parameters:
@@ -312,8 +354,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserPage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
-  /publications/{publicationId}/like:
+  /publications/{publicationId}/likes:
     parameters:
       - $ref: '#/components/parameters/PublicationId'
     post:
@@ -328,6 +374,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     delete:
       tags: [likes]
       summary: Снять лайк
@@ -339,6 +387,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /publications/{publicationId}/comments:
     parameters:
@@ -360,6 +410,8 @@ paths:
                 $ref: '#/components/schemas/CommentPage'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     post:
       tags: [comments]
       summary: Добавить комментарий
@@ -383,6 +435,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /places/popular:
     get:
@@ -400,26 +454,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlacePage'
-
-  /places/{placeId}/publications:
-    parameters:
-      - $ref: '#/components/parameters/PlaceId'
-    get:
-      tags: [places]
-      summary: Посты с конкретного места
-      operationId: getPlacePublications
-      parameters:
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-      responses:
-        '200':
-          description: Страница постов с места
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublicationPage'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
 components:
   securitySchemes:
@@ -438,13 +474,6 @@ components:
         format: uuid
     UserId:
       name: userId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-    PlaceId:
-      name: placeId
       in: path
       required: true
       schema:
@@ -496,6 +525,12 @@ components:
             $ref: '#/components/schemas/Error'
     NotFound:
       description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: Внутренняя ошибка сервера
       content:
         application/json:
           schema:
