@@ -1,0 +1,135 @@
+
+Project travelnet_core {
+  database_type: 'PostgreSQL'
+  Note: '''
+    Основное реляционное хранилище социальной сети для путешественников.
+  '''
+}
+
+Table users {
+  id uuid [pk]
+  name varchar(100) [not null]
+  bio text
+  avatar_url text [note: 'Ссылка на медиа в объектном хранилище']
+  followers_count bigint [not null, note: 'Счётчик подписчиков']
+  subscriptions_count bigint [not null, note: 'Счётчик подписок']
+  publications_count bigint [not null, note: 'Счётчик публикаций']
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+  Note: 'Профили пользователей'
+}
+
+
+Table media {
+  id uuid [pk]
+  owner_id uuid [not null, note: 'Кто загрузил медиа']
+  url text [not null, note: 'URL сжатого изображения (<= 2 МБ)']
+  preview_url text [not null, note: 'URL превью']
+  size_bytes bigint
+  is_attached boolean [not null, default: false, note: 'Прикреплено ли к посту; нельзя удалить, если true']
+  created_at timestamptz [not null]
+
+  indexes {
+    owner_id [name: 'idx_media_owner']
+  }
+  Note: 'Загруженные фотографии. Удаление запрещено, пока медиа используется в посте.'
+}
+
+
+Table places {
+  id uuid [pk]
+  name varchar(200) [not null]
+  latitude double [not null]
+  longitude double [not null]
+  publications_count bigint [not null, default: 0, note: 'Для сортировки популярных мест']
+  created_at timestamptz [not null]
+
+  indexes {
+    publications_count [name: 'idx_places_popularity']
+  }
+  Note: 'Места'
+}
+
+
+Table publications {
+  id uuid [pk]
+  author_id uuid [not null]
+  description varchar(500)
+  latitude double
+  longitude double
+  place_id uuid [note: 'Опциональная привязка к месту']
+  likes_count bigint        
+  comments_count bigint        
+  created_at timestamptz [not null]
+  updated_at timestamptz
+
+  indexes {
+    (author_id, created_at) [name: 'idx_pub_author_created']
+    (place_id, created_at) [name: 'idx_pub_place_created']
+    created_at [name: 'idx_pub_created']
+  }
+  Note: 'Посты пользователей. Фильтрация GET /publications по author_id и/или place_id.'
+}
+
+Table publication_media {
+  publication_id uuid [not null]
+  media_id uuid [not null]
+  position smallint [not null, note: 'Порядок 0..4']
+
+  indexes {
+    (publication_id, media_id) [pk]
+    (publication_id, position) [unique, name: 'uq_pub_media_position']
+  }
+  Note: 'Многие-ко-многим между постами и медиа (не более 5 на пост).'
+}
+
+Table comments {
+  id uuid [pk]
+  publication_id uuid [not null]
+  author_id uuid [not null]
+  text varchar(300) [not null]
+  created_at timestamptz [not null]
+
+  indexes {
+    (publication_id, created_at) [name: 'idx_comments_pub_created']
+  }
+  Note: 'Комментарии к постам, в обратном хронологическом порядке.'
+}
+
+Table likes {
+  publication_id uuid [not null]
+  user_id uuid [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (publication_id, user_id) [pk]
+    (user_id, created_at) [name: 'idx_likes_user']
+  }
+  Note: 'Лайки к постам'
+}
+
+Table subscriptions {
+  follower_id uuid [not null, note: 'кто подписался']
+  followee_id uuid [not null, note: 'на кого подписались']
+  created_at  timestamptz [not null]
+
+  indexes {
+    (follower_id, followee_id) [pk]
+    (followee_id, created_at) [name: 'idx_sub_followers', note: 'список подписчиков followee']
+    (follower_id, created_at) [name: 'idx_sub_following', note: 'список подписок follower']
+  }
+  Note: 'Подписки'
+}
+
+Ref: media.owner_id > users.id 
+Ref: publications.author_id > users.id 
+Ref: publications.place_id > places.id 
+Ref: publication_media.publication_id > publications.id 
+Ref: publication_media.media_id > media.id 
+Ref: comments.publication_id > publications.id    
+Ref: comments.author_id > users.id
+Ref: likes.publication_id > publications.id 
+Ref: likes.user_id > users.id
+Ref: subscriptions.follower_id > users.id
+Ref: subscriptions.followee_id > users.id
+
