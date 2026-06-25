@@ -1,0 +1,71 @@
+@startuml c4-container
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title C4 Level 2 — Социальная сеть для путешественников
+
+Person(traveler, "Путешественник", "Публикует посты, читает ленту, ставит реакции, управляет подписками, ищет места")
+
+System_Boundary(c1, "Социальная сеть для путешественников") {
+    Container(mobile, "Мобильное приложение", "Публикация постов с фото, лента, реакции, подписки, поиск мест")
+    Container(web, "Веб-приложение", "Публикация постов с фото, лента, реакции, подписки, поиск мест")
+
+    Container(lbGateway, "Load Balancer · API Gateway", "Балансирует нагрузку между инстансами API Gateway")
+    Container(apiGateway, "API Gateway", "Единая точка входа")
+
+    Container(postsService, "Сервис постов", "Метаданные постов (publications): создание, чтение, счётчики лайков/комментариев")
+    Container(mediaService, "Сервис обработки публикаций", "Приём фото, сжатие (<= 2 МБ), генерация превью, загрузка оригиналов и превью в объектное хранилище")
+    Container(reactionsService, "Сервис реакций", "Лайки и комментарии к постам")
+    Container(feedService, "Сервис ленты", "Формирование ленты по подпискам в обратном хронологическом порядке (гибридный fan-out)")
+    Container(subsService, "Сервис подписок", "Подписки и подписчики пользователей")
+    Container(placesService, "Сервис поиска мест", "Популярные места и посты, привязанные к местам")
+
+    ContainerQueue(broker, "Брокер сообщений", "События: 'новый пост', обработка медиа, подписки/отписки")
+
+    ContainerDb(postsDb, "БД постов", "PostgreSQL (шард по author_id, RF=3)", "Таблица publications")
+    ContainerDb(reactionsDb, "БД реакций", "PostgreSQL (шард по publication_id, RF=3)", "Таблицы comments и likes")
+    ContainerDb(subsDb, "БД подписок", "PostgreSQL", "Граф подписок (follower/followee)")
+    ContainerDb(feedCache, "Кэш ленты", "Redis", "Предрассчитанные ленты пользователей")
+    ContainerDb(placesIndex, "Индекс мест", "Elasticsearch", "Поиск по геолокации и популярности мест")
+    ContainerDb(objectStorage, "Объектное хранилище", "S3", "Оригиналы фотографий и превью")
+}
+
+' --- Клиенты ---
+Rel(traveler, mobile, "Использует", "")
+Rel(traveler, web, "Использует")
+Rel(mobile, lbGateway, "Вызывает API")
+Rel(web, lbGateway, "Вызывает API", "HTTPS / JSON")
+Rel(lbGateway, apiGateway, "Балансирует запросы между инстансами")
+
+' --- Gateway -> сервисы ---
+Rel(apiGateway, postsService, "Маршрутизирует запросы постов")
+Rel(apiGateway, mediaService, "Маршрутизирует загрузку медиа")
+Rel(apiGateway, reactionsService, "Маршрутизирует реакции")
+Rel(apiGateway, feedService, "Маршрутизирует запросы ленты")
+Rel(apiGateway, subsService, "Маршрутизирует подписки")
+Rel(apiGateway, placesService, "Маршрутизирует поиск мест")
+
+' --- Посты ---
+Rel(postsService, postsDb, "Читает/пишет метаданные постов")
+Rel(postsService, broker, "Публикует событие 'новый пост'")
+
+' --- Обработка публикаций ---
+Rel(mediaService, objectStorage, "Сохраняет фото и превью")
+Rel(mediaService, broker, "Публикует/читает события обработки медиа")
+
+' --- Реакции ---
+Rel(reactionsService, reactionsDb, "Читает/пишет лайки и комментарии")
+
+' --- Лента ---
+Rel(feedService, broker, "Читает события 'новый пост' и подписки/отписки")
+Rel(feedService, postsService, "Запрашивает новые посты")
+Rel(feedService, subsService, "Запрашивает подписчиков автора")
+Rel(feedService, feedCache, "Пишет и читает ленты")
+
+' --- Подписки ---
+Rel(subsService, subsDb, "Читает/пишет подписки")
+Rel(subsService, broker, "Публикует события подписки/отписки")
+
+' --- Поиск мест ---
+Rel(placesService, placesIndex, "Читает/пишет места", "REST")
+
+@enduml
